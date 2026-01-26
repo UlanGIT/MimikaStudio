@@ -26,6 +26,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   String? _selectedPdfPath;
   String? _selectedPdfName;
   bool _isInitialized = false;
+  String? _textFileContent; // For .txt and .md files
 
   // Reading state
   bool _isReading = false;
@@ -98,12 +99,15 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
         try {
           final files = await dir.list().toList();
           for (final file in files) {
-            if (file is File && file.path.toLowerCase().endsWith('.pdf')) {
-              final name = p.basename(file.path);
-              final absolutePath = file.absolute.path;
-              if (!_pdfLibrary.any((p) => p['path'] == absolutePath)) {
-                _pdfLibrary.add({'path': absolutePath, 'name': name});
-                debugPrint('Found PDF: $name at $absolutePath');
+            if (file is File) {
+              final lowerPath = file.path.toLowerCase();
+              if (lowerPath.endsWith('.pdf') || lowerPath.endsWith('.txt') || lowerPath.endsWith('.md')) {
+                final name = p.basename(file.path);
+                final absolutePath = file.absolute.path;
+                if (!_pdfLibrary.any((p) => p['path'] == absolutePath)) {
+                  _pdfLibrary.add({'path': absolutePath, 'name': name});
+                  debugPrint('Found document: $name at $absolutePath');
+                }
               }
             }
           }
@@ -145,7 +149,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   Future<void> _openPdf() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: ['pdf', 'txt', 'md'],
     );
 
     if (result != null && result.files.single.path != null) {
@@ -169,8 +173,41 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
       _selectedPdfName = name;
       _currentPage = 1;
       _totalPages = 0;
+      _textFileContent = null;
+      _selectedText = null;
       _stopReading();
     });
+
+    // Load text content for .txt and .md files
+    final lowerPath = path.toLowerCase();
+    if (lowerPath.endsWith('.txt') || lowerPath.endsWith('.md')) {
+      _loadTextFile(path);
+    }
+  }
+
+  Future<void> _loadTextFile(String path) async {
+    try {
+      final file = File(path);
+      final content = await file.readAsString();
+      setState(() {
+        _textFileContent = content;
+        _selectedText = content; // Auto-select all text for reading
+        _totalPages = 1;
+      });
+    } catch (e) {
+      debugPrint('Error loading text file: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading file: $e')),
+        );
+      }
+    }
+  }
+
+  bool get _isTextFile {
+    if (_selectedPdfPath == null) return false;
+    final lowerPath = _selectedPdfPath!.toLowerCase();
+    return lowerPath.endsWith('.txt') || lowerPath.endsWith('.md');
   }
 
   void _removePdf(String path) {
@@ -368,18 +405,18 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
               children: [
                 const Icon(Icons.library_books, size: 20),
                 const SizedBox(width: 8),
-                const Text('PDF Library', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Documents', style: TextStyle(fontWeight: FontWeight.bold)),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.refresh, size: 20),
                   onPressed: _loadSamplePdfs,
-                  tooltip: 'Refresh PDFs',
+                  tooltip: 'Refresh',
                   visualDensity: VisualDensity.compact,
                 ),
                 IconButton(
                   icon: const Icon(Icons.add, size: 20),
                   onPressed: _openPdf,
-                  tooltip: 'Open PDF',
+                  tooltip: 'Open Document',
                   visualDensity: VisualDensity.compact,
                 ),
               ],
@@ -392,17 +429,17 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.picture_as_pdf, size: 48, color: Colors.grey.shade400),
+                        Icon(Icons.auto_stories, size: 48, color: Colors.grey.shade400),
                         const SizedBox(height: 8),
                         Text(
-                          'No PDFs',
+                          'No Documents',
                           style: TextStyle(color: Colors.grey.shade600),
                         ),
                         const SizedBox(height: 4),
                         TextButton.icon(
                           onPressed: _openPdf,
                           icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Open PDF'),
+                          label: const Text('Open'),
                         ),
                       ],
                     ),
@@ -413,12 +450,22 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
                       final pdf = _pdfLibrary[index];
                       final isSelected = pdf['path'] == _selectedPdfPath;
 
+                      final lowerName = pdf['name']!.toLowerCase();
+                      final IconData icon;
+                      if (lowerName.endsWith('.md')) {
+                        icon = Icons.code;
+                      } else if (lowerName.endsWith('.txt')) {
+                        icon = Icons.article;
+                      } else {
+                        icon = Icons.picture_as_pdf;
+                      }
+
                       return ListTile(
                         dense: true,
                         selected: isSelected,
                         selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
                         leading: Icon(
-                          Icons.picture_as_pdf,
+                          icon,
                           color: isSelected ? Theme.of(context).colorScheme.primary : null,
                           size: 20,
                         ),
@@ -502,17 +549,22 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.picture_as_pdf, size: 80, color: Colors.grey.shade400),
+          Icon(Icons.auto_stories, size: 80, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
-            'Open a PDF to get started',
+            'Open a document to get started',
             style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Supported: PDF, TXT, MD',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _openPdf,
             icon: const Icon(Icons.folder_open),
-            label: const Text('Open PDF'),
+            label: const Text('Open Document'),
           ),
         ],
       ),
@@ -532,6 +584,11 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
           ],
         ),
       );
+    }
+
+    // Use text viewer for .txt and .md files
+    if (_isTextFile) {
+      return _buildTextViewer();
     }
 
     return Column(
@@ -566,6 +623,149 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
         // Page indicator
         _buildPageIndicator(),
       ],
+    );
+  }
+
+  Widget _buildTextViewer() {
+    return Column(
+      children: [
+        // Toolbar (simplified for text files)
+        _buildTextToolbar(),
+        // Reading indicator
+        if (_isReading) _buildReadingIndicator(),
+        // Text content
+        Expanded(
+          child: _textFileContent == null
+              ? const Center(child: CircularProgressIndicator())
+              : Container(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: SelectableText(
+                      _textFileContent!,
+                      style: TextStyle(
+                        fontSize: 16,
+                        height: 1.6,
+                        fontFamily: _selectedPdfPath!.toLowerCase().endsWith('.md')
+                            ? 'monospace'
+                            : null,
+                      ),
+                      onSelectionChanged: (selection, cause) {
+                        if (selection.baseOffset != selection.extentOffset) {
+                          final selected = _textFileContent!.substring(
+                            selection.baseOffset,
+                            selection.extentOffset,
+                          );
+                          setState(() => _selectedText = selected);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+        ),
+        // Info bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            border: Border(
+              top: BorderSide(color: Theme.of(context).dividerColor),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('${_textFileContent?.length ?? 0} characters'),
+              const SizedBox(width: 16),
+              Text('${_textFileContent?.split('\n').length ?? 0} lines'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextToolbar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Row(
+        children: [
+          // File type indicator
+          Chip(
+            avatar: Icon(
+              _selectedPdfPath!.toLowerCase().endsWith('.md')
+                  ? Icons.code
+                  : Icons.article,
+              size: 16,
+            ),
+            label: Text(
+              _selectedPdfPath!.toLowerCase().endsWith('.md') ? 'Markdown' : 'Text',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Select all button
+          TextButton.icon(
+            onPressed: () {
+              setState(() => _selectedText = _textFileContent);
+            },
+            icon: const Icon(Icons.select_all, size: 18),
+            label: const Text('Select All'),
+          ),
+          const Spacer(),
+          // TTS controls
+          if (_selectedText != null && _selectedText!.isNotEmpty && !_isReading)
+            Chip(
+              avatar: const Icon(Icons.text_fields, size: 16),
+              label: Text(
+                '${_selectedText!.length} chars selected',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          const SizedBox(width: 8),
+          if (!_isReading)
+            FilledButton.icon(
+              onPressed: (_selectedText != null && _selectedText!.isNotEmpty)
+                  ? _startReading
+                  : null,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Read Aloud'),
+            )
+          else
+            Row(
+              children: [
+                if (_isPaused)
+                  FilledButton.icon(
+                    onPressed: _resumeReading,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Resume'),
+                  )
+                else
+                  FilledButton.tonalIcon(
+                    onPressed: _pauseReading,
+                    icon: const Icon(Icons.pause),
+                    label: const Text('Pause'),
+                  ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _stopReading,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade100,
+                    foregroundColor: Colors.red.shade700,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 

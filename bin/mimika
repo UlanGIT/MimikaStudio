@@ -1,0 +1,540 @@
+#!/usr/bin/env python3
+"""
+MimikaStudio CLI - Command-line interface for voice cloning and TTS.
+
+Usage:
+    # Kokoro TTS (fast British/American voices)
+    mimika kokoro "Hello, world!" --voice bf_emma --output hello.wav
+    mimika kokoro input.txt --voice bm_george --speed 1.2
+
+    # Qwen3 Custom Voice (preset speakers)
+    mimika qwen3 "Hello, world!" --speaker Ryan --style "professional narration"
+    mimika qwen3 book.epub --speaker Sohee --output audiobook.wav
+
+    # Qwen3 Voice Clone (clone from reference audio)
+    mimika qwen3 "Hello, world!" --clone --reference voice.wav
+    mimika qwen3 book.pdf --clone --reference speaker.wav --output book.wav
+
+    # XTTS Voice Clone
+    mimika xtts "Hello, world!" --voice Natasha --language en
+    mimika xtts document.docx --voice Suzan --output output.wav
+
+Supported file formats: .txt, .pdf, .epub, .docx, .doc
+"""
+
+import argparse
+import sys
+import os
+import re
+import json
+import requests
+from pathlib import Path
+from typing import Optional
+
+# Backend API URL
+API_BASE = os.environ.get("MIMIKA_API_URL", "http://localhost:8000")
+
+
+# =============================================================================
+# Text Extraction
+# =============================================================================
+
+def extract_text(file_path: str) -> str:
+    """Extract text from various file formats."""
+    path = Path(file_path)
+    ext = path.suffix.lower()
+
+    extractors = {
+        '.txt': extract_txt,
+        '.pdf': extract_pdf,
+        '.epub': extract_epub,
+        '.docx': extract_docx,
+        '.doc': extract_doc,
+    }
+
+    if ext not in extractors:
+        raise ValueError(f"Unsupported file format: {ext}. Supported: {', '.join(extractors.keys())}")
+
+    text = extractors[ext](file_path)
+    return clean_text(text)
+
+
+def extract_txt(file_path: str) -> str:
+    """Extract text from plain text file with encoding detection."""
+    encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+    for encoding in encodings:
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                return f.read()
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    raise ValueError(f"Could not decode {file_path} with any supported encoding")
+
+
+def extract_pdf(file_path: str) -> str:
+    """Extract text from PDF file."""
+    try:
+        import PyPDF2
+    except ImportError:
+        raise ImportError("PyPDF2 required for PDF support: pip install PyPDF2")
+
+    text_parts = []
+    with open(file_path, 'rb') as f:
+        reader = PyPDF2.PdfReader(f)
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                text_parts.append(text)
+    return '\n'.join(text_parts)
+
+
+def extract_epub(file_path: str) -> str:
+    """Extract text from EPUB file."""
+    # Try ebooklib first
+    try:
+        import ebooklib
+        from ebooklib import epub
+        from bs4 import BeautifulSoup
+
+        book = epub.read_epub(file_path)
+        text_parts = []
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                soup = BeautifulSoup(item.get_content(), 'html.parser')
+                text_parts.append(soup.get_text())
+        return '\n'.join(text_parts)
+    except ImportError:
+        pass
+
+    # Fallback: manual zipfile extraction
+    try:
+        import zipfile
+        from bs4 import BeautifulSoup
+
+        text_parts = []
+        with zipfile.ZipFile(file_path, 'r') as z:
+            for name in z.namelist():
+                if name.endswith(('.html', '.xhtml', '.htm')):
+                    with z.open(name) as f:
+                        soup = BeautifulSoup(f.read(), 'html.parser')
+                        text_parts.append(soup.get_text())
+        return '\n'.join(text_parts)
+    except ImportError:
+        raise ImportError("beautifulsoup4 required for EPUB support: pip install beautifulsoup4 ebooklib")
+
+
+def extract_docx(file_path: str) -> str:
+    """Extract text from DOCX file."""
+    try:
+        import docx
+    except ImportError:
+        raise ImportError("python-docx required for DOCX support: pip install python-docx")
+
+    doc = docx.Document(file_path)
+    return '\n'.join(para.text for para in doc.paragraphs)
+
+
+def extract_doc(file_path: str) -> str:
+    """Extract text from legacy DOC file."""
+    try:
+        import docx2txt
+    except ImportError:
+        raise ImportError("docx2txt required for DOC support: pip install docx2txt")
+
+    return docx2txt.process(file_path)
+
+
+def clean_text(text: str) -> str:
+    """Clean and normalize extracted text."""
+    # Normalize whitespace
+    text = re.sub(r'[ \t]+', ' ', text)
+    # Normalize line breaks
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    # Remove isolated digits (page numbers)
+    text = re.sub(r'^\s*\d+\s*$', '', text, flags=re.MULTILINE)
+    return text.strip()
+
+
+# =============================================================================
+# API Clients
+# =============================================================================
+
+def generate_kokoro(text: str, voice: str = "bf_emma", speed: float = 1.0) -> dict:
+    """Generate audio using Kokoro TTS."""
+    response = requests.post(
+        f"{API_BASE}/api/kokoro/generate",
+        json={"text": text, "voice": voice, "speed": speed}
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def generate_qwen3_custom(
+    text: str,
+    speaker: str = "Ryan",
+    style: str = "Optimized for engaging, professional audiobook narration",
+    model_size: str = "1.7B",
+    temperature: float = 0.9,
+    top_p: float = 0.9,
+    top_k: int = 50,
+) -> dict:
+    """Generate audio using Qwen3 CustomVoice (preset speakers)."""
+    response = requests.post(
+        f"{API_BASE}/api/qwen3/generate",
+        json={
+            "text": text,
+            "mode": "custom",
+            "speaker": speaker,
+            "style_instruction": style,
+            "model_size": model_size,
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+        }
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def generate_qwen3_clone(
+    text: str,
+    reference_audio: str,
+    reference_text: Optional[str] = None,
+    language: str = "auto",
+    model_size: str = "1.7B",
+    temperature: float = 0.9,
+    top_p: float = 0.9,
+    top_k: int = 50,
+) -> dict:
+    """Generate audio using Qwen3 voice cloning."""
+    # Read reference audio file
+    with open(reference_audio, 'rb') as f:
+        audio_data = f.read()
+
+    import base64
+    audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+
+    response = requests.post(
+        f"{API_BASE}/api/qwen3/generate",
+        json={
+            "text": text,
+            "mode": "clone",
+            "reference_audio_base64": audio_b64,
+            "reference_text": reference_text or "",
+            "language": language,
+            "model_size": model_size,
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+        }
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def generate_xtts(
+    text: str,
+    voice: str,
+    language: str = "en",
+    speed: float = 1.0,
+) -> dict:
+    """Generate audio using XTTS voice cloning."""
+    response = requests.post(
+        f"{API_BASE}/api/xtts/generate",
+        json={
+            "text": text,
+            "voice": voice,
+            "language": language,
+            "speed": speed,
+        }
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def download_audio(url: str, output_path: str) -> str:
+    """Download audio from URL to file."""
+    # Handle relative URLs
+    if url.startswith('/'):
+        url = f"{API_BASE}{url}"
+
+    response = requests.get(url)
+    response.raise_for_status()
+
+    with open(output_path, 'wb') as f:
+        f.write(response.content)
+
+    return output_path
+
+
+def list_voices(engine: str) -> None:
+    """List available voices for an engine."""
+    endpoints = {
+        'kokoro': '/api/kokoro/voices',
+        'qwen3': '/api/qwen3/speakers',
+        'xtts': '/api/xtts/voices',
+    }
+
+    if engine not in endpoints:
+        print(f"Unknown engine: {engine}")
+        return
+
+    response = requests.get(f"{API_BASE}{endpoints[engine]}")
+    response.raise_for_status()
+    data = response.json()
+
+    print(f"\n{engine.upper()} Voices:")
+    print("-" * 40)
+
+    if engine == 'kokoro':
+        for voice in data.get('voices', []):
+            print(f"  {voice['id']:20} {voice.get('name', '')}")
+    elif engine == 'qwen3':
+        for speaker in data.get('speakers', []):
+            print(f"  {speaker['name']:20} ({speaker.get('language', '')})")
+    elif engine == 'xtts':
+        for voice in data.get('voices', []):
+            print(f"  {voice['name']}")
+
+
+# =============================================================================
+# CLI Commands
+# =============================================================================
+
+def cmd_kokoro(args):
+    """Handle Kokoro TTS command."""
+    # Get input text
+    if os.path.isfile(args.input):
+        text = extract_text(args.input)
+        default_output = Path(args.input).stem + ".wav"
+    else:
+        text = args.input
+        default_output = "output.wav"
+
+    output = args.output or default_output
+
+    print(f"Generating with Kokoro TTS...")
+    print(f"  Voice: {args.voice}")
+    print(f"  Speed: {args.speed}")
+    print(f"  Text length: {len(text)} chars")
+
+    result = generate_kokoro(text, voice=args.voice, speed=args.speed)
+
+    if 'audio_url' in result:
+        download_audio(result['audio_url'], output)
+        print(f"  Output: {output}")
+    else:
+        print(f"Error: {result}")
+        sys.exit(1)
+
+
+def cmd_qwen3(args):
+    """Handle Qwen3 TTS command."""
+    # Get input text
+    if os.path.isfile(args.input):
+        text = extract_text(args.input)
+        default_output = Path(args.input).stem + ".wav"
+    else:
+        text = args.input
+        default_output = "output.wav"
+
+    output = args.output or default_output
+
+    if args.clone:
+        # Voice cloning mode
+        if not args.reference:
+            print("Error: --reference required for voice cloning mode")
+            sys.exit(1)
+
+        print(f"Generating with Qwen3 Voice Clone...")
+        print(f"  Reference: {args.reference}")
+        print(f"  Model: {args.model}")
+        print(f"  Text length: {len(text)} chars")
+
+        result = generate_qwen3_clone(
+            text,
+            reference_audio=args.reference,
+            reference_text=args.reference_text,
+            language=args.language,
+            model_size=args.model,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+        )
+    else:
+        # Custom voice mode (preset speakers)
+        print(f"Generating with Qwen3 Custom Voice...")
+        print(f"  Speaker: {args.speaker}")
+        print(f"  Style: {args.style}")
+        print(f"  Model: {args.model}")
+        print(f"  Text length: {len(text)} chars")
+
+        result = generate_qwen3_custom(
+            text,
+            speaker=args.speaker,
+            style=args.style,
+            model_size=args.model,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+        )
+
+    if 'audio_url' in result:
+        download_audio(result['audio_url'], output)
+        print(f"  Output: {output}")
+    else:
+        print(f"Error: {result}")
+        sys.exit(1)
+
+
+def cmd_xtts(args):
+    """Handle XTTS command."""
+    # Get input text
+    if os.path.isfile(args.input):
+        text = extract_text(args.input)
+        default_output = Path(args.input).stem + ".wav"
+    else:
+        text = args.input
+        default_output = "output.wav"
+
+    output = args.output or default_output
+
+    print(f"Generating with XTTS...")
+    print(f"  Voice: {args.voice}")
+    print(f"  Language: {args.language}")
+    print(f"  Text length: {len(text)} chars")
+
+    result = generate_xtts(
+        text,
+        voice=args.voice,
+        language=args.language,
+        speed=args.speed,
+    )
+
+    if 'audio_url' in result:
+        download_audio(result['audio_url'], output)
+        print(f"  Output: {output}")
+    else:
+        print(f"Error: {result}")
+        sys.exit(1)
+
+
+def cmd_voices(args):
+    """List available voices."""
+    if args.engine:
+        list_voices(args.engine)
+    else:
+        for engine in ['kokoro', 'qwen3', 'xtts']:
+            try:
+                list_voices(engine)
+            except Exception as e:
+                print(f"\n{engine.upper()}: Error - {e}")
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="MimikaStudio CLI - Voice cloning and TTS",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s kokoro "Hello, world!" --voice bf_emma
+  %(prog)s qwen3 "Hello!" --speaker Ryan --style "whisper softly"
+  %(prog)s qwen3 book.pdf --clone --reference voice.wav
+  %(prog)s xtts "Hello!" --voice Natasha
+  %(prog)s voices --engine kokoro
+        """
+    )
+
+    subparsers = parser.add_subparsers(dest='command', help='TTS engine to use')
+
+    # Kokoro subcommand
+    kokoro_parser = subparsers.add_parser('kokoro', help='Fast British/American TTS')
+    kokoro_parser.add_argument('input', help='Text or file path (.txt, .pdf, .epub, .docx, .doc)')
+    kokoro_parser.add_argument('--voice', '-v', default='bf_emma',
+        help='Voice ID (default: bf_emma)')
+    kokoro_parser.add_argument('--speed', '-s', type=float, default=1.0,
+        help='Speech speed (default: 1.0)')
+    kokoro_parser.add_argument('--output', '-o', help='Output WAV file path')
+
+    # Qwen3 subcommand
+    qwen3_parser = subparsers.add_parser('qwen3', help='Qwen3-TTS voice clone or preset speakers')
+    qwen3_parser.add_argument('input', help='Text or file path (.txt, .pdf, .epub, .docx, .doc)')
+    qwen3_parser.add_argument('--clone', action='store_true',
+        help='Use voice cloning mode')
+    qwen3_parser.add_argument('--reference', '-r',
+        help='Reference audio file for voice cloning (WAV)')
+    qwen3_parser.add_argument('--reference-text',
+        help='Transcript of reference audio (optional)')
+    qwen3_parser.add_argument('--speaker', default='Ryan',
+        help='Preset speaker for custom voice mode (default: Ryan)')
+    qwen3_parser.add_argument('--style', default='Optimized for engaging, professional audiobook narration',
+        help='Style instruction for speech')
+    qwen3_parser.add_argument('--language', '-l', default='auto',
+        help='Language code (default: auto)')
+    qwen3_parser.add_argument('--model', '-m', default='1.7B',
+        choices=['0.6B', '1.7B'], help='Model size (default: 1.7B)')
+    qwen3_parser.add_argument('--temperature', type=float, default=0.9)
+    qwen3_parser.add_argument('--top-p', type=float, default=0.9)
+    qwen3_parser.add_argument('--top-k', type=int, default=50)
+    qwen3_parser.add_argument('--output', '-o', help='Output WAV file path')
+
+    # XTTS subcommand
+    xtts_parser = subparsers.add_parser('xtts', help='XTTS multi-language voice cloning')
+    xtts_parser.add_argument('input', help='Text or file path (.txt, .pdf, .epub, .docx, .doc)')
+    xtts_parser.add_argument('--voice', '-v', required=True,
+        help='Voice name (from your voice library)')
+    xtts_parser.add_argument('--language', '-l', default='en',
+        help='Language code (default: en)')
+    xtts_parser.add_argument('--speed', '-s', type=float, default=1.0,
+        help='Speech speed (default: 1.0)')
+    xtts_parser.add_argument('--output', '-o', help='Output WAV file path')
+
+    # Voices subcommand
+    voices_parser = subparsers.add_parser('voices', help='List available voices')
+    voices_parser.add_argument('--engine', '-e',
+        choices=['kokoro', 'qwen3', 'xtts'],
+        help='Filter by engine')
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    # Check API is running
+    try:
+        requests.get(f"{API_BASE}/api/health", timeout=2)
+    except requests.exceptions.RequestException:
+        print(f"Error: Cannot connect to MimikaStudio backend at {API_BASE}")
+        print("Make sure the backend is running: ./bin/mimikactl up")
+        sys.exit(1)
+
+    # Dispatch command
+    commands = {
+        'kokoro': cmd_kokoro,
+        'qwen3': cmd_qwen3,
+        'xtts': cmd_xtts,
+        'voices': cmd_voices,
+    }
+
+    try:
+        commands[args.command](args)
+    except requests.exceptions.HTTPError as e:
+        print(f"API Error: {e}")
+        if e.response is not None:
+            try:
+                print(e.response.json())
+            except:
+                print(e.response.text)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

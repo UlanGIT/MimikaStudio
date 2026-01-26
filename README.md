@@ -87,7 +87,8 @@ This isn't a weekend hack:
 - **Emma IPA**: British phonetic transcription with multi-LLM support (Claude, OpenAI, Ollama)
 - **XTTS2**: Multi-language voice cloning
 - **Unified Voice Library**: Single voice list usable with both Qwen3 and XTTS engines
-- **PDF Reader**: Read PDFs aloud with Kokoro TTS (place PDFs in `./pdf` directory)
+- **Document Reader**: Read PDFs, TXT, and MD files aloud with Kokoro TTS
+- **CLI Tool**: Full command-line interface for all TTS engines
 - **MCP Server**: Codex CLI integration for programmatic access
 
 ## Quick Start
@@ -142,6 +143,42 @@ cd /path/to/MimikaStudio
 ./bin/mimikactl clean                 # Clean logs and temp files
 ./bin/mimikactl version               # Show version info
 ```
+
+## CLI Tool (mimika)
+
+Full command-line interface for voice cloning and TTS generation.
+
+```bash
+# Kokoro TTS (fast British/American voices)
+./bin/mimika kokoro "Hello, world!" --voice bf_emma --output hello.wav
+./bin/mimika kokoro input.txt --voice bm_george --speed 1.2
+
+# Qwen3 Custom Voice (preset speakers)
+./bin/mimika qwen3 "Hello, world!" --speaker Ryan --style "professional narration"
+./bin/mimika qwen3 book.epub --speaker Sohee --output audiobook.wav
+
+# Qwen3 Voice Clone (clone from reference audio)
+./bin/mimika qwen3 "Hello, world!" --clone --reference voice.wav
+./bin/mimika qwen3 book.pdf --clone --reference speaker.wav --output book.wav
+
+# XTTS Voice Clone
+./bin/mimika xtts "Hello, world!" --voice Natasha --language en
+
+# List available voices
+./bin/mimika voices --engine kokoro
+./bin/mimika voices --engine qwen3
+```
+
+### Supported File Formats
+
+| Format | Extension | Status |
+|--------|-----------|--------|
+| Plain Text | `.txt` | Full support |
+| PDF | `.pdf` | Full support |
+| EPUB | `.epub` | Full support |
+| Word Document | `.docx` | Full support (requires python-docx) |
+| Legacy Word | `.doc` | Full support (requires docx2txt) |
+| Markdown | `.md` | Full support |
 
 ---
 
