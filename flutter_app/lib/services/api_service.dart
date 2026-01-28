@@ -499,4 +499,28 @@ class ApiService {
     }
   }
 
+  // ============== Kokoro Audio Library ==============
+
+  /// List all generated Kokoro TTS audio files.
+  Future<List<Map<String, dynamic>>> getKokoroAudioFiles() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/kokoro/audio/list'),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['audio_files']);
+    }
+    throw Exception('Failed to list Kokoro audio files: ${response.body}');
+  }
+
+  /// Delete a Kokoro audio file.
+  Future<void> deleteKokoroAudio(String filename) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/kokoro/audio/$filename'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete audio file: ${response.body}');
+    }
+  }
+
 }

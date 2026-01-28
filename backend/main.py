@@ -898,6 +898,62 @@ async def audiobook_delete(job_id: str):
     return {"message": "Audiobook deleted", "job_id": job_id}
 
 
+# ============== Kokoro Audio Library Endpoints ==============
+
+@app.get("/api/kokoro/audio/list")
+async def kokoro_audio_list():
+    """List all generated Kokoro TTS audio files."""
+    from datetime import datetime
+
+    audio_files = []
+    kokoro_pattern = "kokoro-"
+
+    for file in outputs_dir.glob(f"{kokoro_pattern}*.wav"):
+        stat = file.stat()
+        # Parse voice from filename: kokoro-{voice}-{uuid}.wav
+        parts = file.stem.split("-")
+        voice = parts[1] if len(parts) > 1 else "unknown"
+        file_id = parts[-1] if len(parts) > 2 else file.stem
+
+        # Get audio duration using soundfile
+        try:
+            import soundfile as sf
+            info = sf.info(str(file))
+            duration_seconds = info.duration
+        except Exception:
+            duration_seconds = 0
+
+        audio_files.append({
+            "id": file_id,
+            "filename": file.name,
+            "voice": voice,
+            "audio_url": f"/audio/{file.name}",
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "duration_seconds": round(duration_seconds, 1),
+            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        })
+
+    # Sort by creation time, newest first
+    audio_files.sort(key=lambda x: x["created_at"], reverse=True)
+
+    return {"audio_files": audio_files, "total": len(audio_files)}
+
+
+@app.delete("/api/kokoro/audio/{filename}")
+async def kokoro_audio_delete(filename: str):
+    """Delete a Kokoro audio file."""
+    # Security: ensure filename starts with kokoro- and ends with .wav
+    if not filename.startswith("kokoro-") or not filename.endswith(".wav"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = outputs_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Audio file '{filename}' not found")
+
+    file_path.unlink()
+    return {"message": "Audio file deleted", "filename": filename}
+
+
 # ============== Sample Texts Endpoints ==============
 
 @app.get("/api/samples/{engine}")
