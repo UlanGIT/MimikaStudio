@@ -155,6 +155,8 @@ cd /path/to/MimikaStudio
 
 Full command-line interface for voice cloning and TTS generation.
 
+### Quick Examples
+
 ```bash
 # Kokoro TTS (fast British/American voices)
 ./bin/mimika kokoro "Hello, world!" --voice bf_emma --output hello.wav
@@ -177,16 +179,225 @@ Full command-line interface for voice cloning and TTS generation.
 ./bin/mimika voices --engine qwen3
 ```
 
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MIMIKA_API_URL` | `http://localhost:8000` | Backend API URL |
+
+### Command Reference
+
+#### `mimika kokoro` - Fast British/American TTS
+
+Generate high-quality speech using Kokoro TTS (82M parameters, sub-200ms latency).
+
+```bash
+./bin/mimika kokoro <input> [options]
+```
+
+| Parameter | Short | Default | Description |
+|-----------|-------|---------|-------------|
+| `input` | | *required* | Text string or file path (.txt, .pdf, .epub, .docx, .doc) |
+| `--voice` | `-v` | `bf_emma` | Voice ID (see `mimika voices --engine kokoro`) |
+| `--speed` | `-s` | `1.0` | Speech speed multiplier (0.5-2.0) |
+| `--output` | `-o` | `<input>.wav` | Output WAV file path |
+
+**Available Kokoro Voices:**
+
+| Voice ID | Name | Gender | Accent |
+|----------|------|--------|--------|
+| `bf_emma` | Emma | Female | British RP |
+| `bf_isabella` | Isabella | Female | British |
+| `bf_alice` | Alice | Female | British |
+| `bf_lily` | Lily | Female | British |
+| `bm_george` | George | Male | British |
+| `bm_lewis` | Lewis | Male | British |
+| `bm_daniel` | Daniel | Male | British |
+| `af_heart` | Heart | Female | American |
+| `af_bella` | Bella | Female | American |
+| `af_nicole` | Nicole | Female | American |
+| `af_aoede` | Aoede | Female | American |
+| `af_kore` | Kore | Female | American |
+| `af_sarah` | Sarah | Female | American |
+| `af_sky` | Sky | Female | American |
+| `am_michael` | Michael | Male | American |
+| `am_adam` | Adam | Male | American |
+| `am_echo` | Echo | Male | American |
+| `am_liam` | Liam | Male | American |
+| `am_onyx` | Onyx | Male | American |
+| `am_puck` | Puck | Male | American |
+| `am_santa` | Santa | Male | American |
+
+**Examples:**
+
+```bash
+# Simple text-to-speech
+./bin/mimika kokoro "Welcome to MimikaStudio!" --voice bf_emma
+
+# Convert PDF to audiobook at 1.2x speed
+./bin/mimika kokoro document.pdf --voice bm_george --speed 1.2 --output audiobook.wav
+
+# Convert EPUB with American voice
+./bin/mimika kokoro novel.epub --voice af_heart --output novel.wav
+```
+
+---
+
+#### `mimika qwen3` - Voice Clone & Custom Voice
+
+Generate speech using Qwen3-TTS with voice cloning or preset speakers.
+
+```bash
+./bin/mimika qwen3 <input> [options]
+```
+
+**Common Parameters:**
+
+| Parameter | Short | Default | Description |
+|-----------|-------|---------|-------------|
+| `input` | | *required* | Text string or file path (.txt, .pdf, .epub, .docx, .doc) |
+| `--output` | `-o` | `<input>.wav` | Output WAV file path |
+| `--model` | `-m` | `1.7B` | Model size: `0.6B` (fast) or `1.7B` (quality) |
+| `--language` | `-l` | `auto` | Language code (auto, en, zh, ja, ko, de, fr, ru, pt, es, it) |
+| `--temperature` | | `0.9` | Generation randomness (0.1-2.0) |
+| `--top-p` | | `0.9` | Nucleus sampling threshold (0.1-1.0) |
+| `--top-k` | | `50` | Top-k sampling (1-100) |
+
+**Custom Voice Mode (Preset Speakers):**
+
+| Parameter | Short | Default | Description |
+|-----------|-------|---------|-------------|
+| `--speaker` | | `Ryan` | Preset speaker name |
+| `--style` | | *see below* | Style instruction for voice |
+
+Default style: `"Optimized for engaging, professional audiobook narration"`
+
+**Available Preset Speakers:**
+
+| Speaker | Language | Character |
+|---------|----------|-----------|
+| `Ryan` | English | Dynamic male, strong rhythm |
+| `Aiden` | English | Sunny American male |
+| `Vivian` | Chinese | Bright young female |
+| `Serena` | Chinese | Warm gentle female |
+| `Uncle_Fu` | Chinese | Seasoned male, mellow timbre |
+| `Dylan` | Chinese | Beijing youthful male |
+| `Eric` | Chinese | Sichuan lively male |
+| `Ono_Anna` | Japanese | Playful female |
+| `Sohee` | Korean | Warm emotional female |
+
+**Voice Clone Mode:**
+
+| Parameter | Short | Default | Description |
+|-----------|-------|---------|-------------|
+| `--clone` | | *flag* | Enable voice cloning mode |
+| `--reference` | `-r` | *required* | Reference audio file (WAV, 3+ seconds) |
+| `--reference-text` | | *optional* | Transcript of reference audio (improves quality) |
+
+**Examples:**
+
+```bash
+# Custom Voice with preset speaker
+./bin/mimika qwen3 "Hello, world!" --speaker Ryan --style "whisper softly"
+
+# Professional audiobook narration
+./bin/mimika qwen3 book.pdf --speaker Sohee --model 1.7B --output audiobook.wav
+
+# Voice cloning from reference audio
+./bin/mimika qwen3 "Hello!" --clone --reference Alina.wav
+
+# Voice cloning with transcript (higher quality)
+./bin/mimika qwen3 book.pdf --clone --reference speaker.wav \
+    --reference-text "This is the transcript of my voice sample." \
+    --output cloned_audiobook.wav
+
+# Adjust generation parameters
+./bin/mimika qwen3 "Testing parameters" --speaker Ryan \
+    --temperature 0.7 --top-p 0.8 --top-k 40
+```
+
+---
+
+#### `mimika xtts` - Multi-language Voice Cloning
+
+Generate speech using XTTS2 with your saved voice samples.
+
+```bash
+./bin/mimika xtts <input> [options]
+```
+
+| Parameter | Short | Default | Description |
+|-----------|-------|---------|-------------|
+| `input` | | *required* | Text string or file path |
+| `--voice` | `-v` | *required* | Voice name from your library |
+| `--language` | `-l` | `en` | Language code |
+| `--speed` | `-s` | `1.0` | Speech speed (0.5-2.0) |
+| `--output` | `-o` | `<input>.wav` | Output WAV file path |
+
+**Supported XTTS Languages:**
+
+`en`, `es`, `fr`, `de`, `it`, `pt`, `pl`, `tr`, `ru`, `nl`, `cs`, `ar`, `zh`, `ja`, `hu`, `ko`
+
+**Examples:**
+
+```bash
+# Generate with custom voice
+./bin/mimika xtts "Bonjour le monde!" --voice Alina --language fr
+
+# Convert document with speed adjustment
+./bin/mimika xtts document.txt --voice Bella --speed 0.9 --output slow.wav
+```
+
+---
+
+#### `mimika voices` - List Available Voices
+
+List all available voices for a specific engine or all engines.
+
+```bash
+./bin/mimika voices [options]
+```
+
+| Parameter | Short | Default | Description |
+|-----------|-------|---------|-------------|
+| `--engine` | `-e` | *all* | Filter by engine: `kokoro`, `qwen3`, `xtts` |
+
+**Examples:**
+
+```bash
+# List all voices across all engines
+./bin/mimika voices
+
+# List only Kokoro voices
+./bin/mimika voices --engine kokoro
+
+# List Qwen3 preset speakers
+./bin/mimika voices --engine qwen3
+
+# List your saved XTTS voice samples
+./bin/mimika voices --engine xtts
+```
+
+---
+
 ### Supported File Formats
 
-| Format | Extension | Status |
-|--------|-----------|--------|
-| Plain Text | `.txt` | Full support |
-| PDF | `.pdf` | Full support |
-| EPUB | `.epub` | Full support |
-| Word Document | `.docx` | Full support (requires python-docx) |
-| Legacy Word | `.doc` | Full support (requires docx2txt) |
-| Markdown | `.md` | Full support |
+The CLI automatically extracts text from various document formats:
+
+| Format | Extension | Requirements |
+|--------|-----------|--------------|
+| Plain Text | `.txt` | Built-in |
+| PDF | `.pdf` | `PyPDF2` |
+| EPUB | `.epub` | `ebooklib`, `beautifulsoup4` |
+| Word Document | `.docx` | `python-docx` |
+| Legacy Word | `.doc` | `docx2txt` |
+| Markdown | `.md` | Built-in |
+
+Install optional dependencies:
+
+```bash
+pip install PyPDF2 ebooklib beautifulsoup4 python-docx docx2txt
+```
 
 ---
 
@@ -297,9 +508,17 @@ Multi-language voice cloning (requires 6-30 second reference audio).
 | **Kokoro** |||
 | `/api/kokoro/generate` | POST | Generate TTS audio |
 | `/api/kokoro/voices` | GET | List available voices |
+| `/api/kokoro/audio/list` | GET | List generated audio files |
+| `/api/kokoro/audio/{filename}` | DELETE | Delete audio file |
 | **XTTS** |||
 | `/api/xtts/generate` | POST | Generate cloned voice audio |
 | `/api/xtts/voices` | GET/POST/DELETE | Voice management |
+| **Audiobook Creator** |||
+| `/api/audiobook/generate` | POST | Start audiobook generation job |
+| `/api/audiobook/status/{job_id}` | GET | Get job progress (chunks completed, total) |
+| `/api/audiobook/cancel/{job_id}` | POST | Cancel in-progress job |
+| `/api/audiobook/list` | GET | List all generated audiobooks |
+| `/api/audiobook/{job_id}` | DELETE | Delete audiobook file |
 | **Emma IPA** |||
 | `/api/ipa/samples` | GET | List IPA sample texts |
 | `/api/ipa/generate` | POST | Generate British IPA transcription |
@@ -307,6 +526,50 @@ Multi-language voice cloning (requires 6-30 second reference audio).
 | **LLM Configuration** |||
 | `/api/llm/config` | GET/POST | Get or update LLM provider settings |
 | `/api/llm/ollama/models` | GET | List locally available Ollama models |
+
+### Audiobook Generation API
+
+Generate audiobooks from documents using background job processing with progress tracking.
+
+**Start Generation:**
+
+```bash
+curl -X POST http://localhost:8000/api/audiobook/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Your long document text here...",
+    "voice": "bf_emma",
+    "speed": 1.0
+  }'
+```
+
+Response:
+```json
+{
+  "job_id": "abc123",
+  "status": "started",
+  "message": "Audiobook generation started"
+}
+```
+
+**Poll Progress:**
+
+```bash
+curl http://localhost:8000/api/audiobook/status/abc123
+```
+
+Response:
+```json
+{
+  "job_id": "abc123",
+  "status": "processing",
+  "current_chunk": 5,
+  "total_chunks": 20,
+  "progress_percent": 25.0
+}
+```
+
+**Output Format:** WAV (44.1kHz stereo)
 
 Full API documentation: http://localhost:8000/docs
 
