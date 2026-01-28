@@ -1081,31 +1081,30 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
     final jobId = book['job_id'] as String;
     final audioUrl = book['audio_url'] as String;
 
-    try {
-      // If same audiobook and paused, just resume
-      if (_playingAudiobookId == jobId && _isAudiobookPaused) {
-        await _audioPlayer.play();
-        setState(() => _isAudiobookPaused = false);
-        return;
-      }
+    // If same audiobook and paused, just resume
+    if (_playingAudiobookId == jobId && _isAudiobookPaused) {
+      setState(() => _isAudiobookPaused = false);
+      await _audioPlayer.play();
+      return;
+    }
 
+    // Update UI immediately
+    setState(() {
+      _playingAudiobookId = jobId;
+      _isAudiobookPaused = false;
+    });
+
+    try {
       // Cancel previous subscription
       await _audiobookPlayerSubscription?.cancel();
 
       // Stop any current playback
-      if (_playingAudiobookId != null) {
-        await _audioPlayer.stop();
-      }
+      await _audioPlayer.stop();
 
       // Start new playback
       await _audioPlayer.setUrl(_api.getAudiobookUrl(audioUrl));
       await _audioPlayer.setSpeed(_audiobookPlaybackSpeed);
       await _audioPlayer.play();
-
-      setState(() {
-        _playingAudiobookId = jobId;
-        _isAudiobookPaused = false;
-      });
 
       // Listen for completion with managed subscription
       _audiobookPlayerSubscription = _audioPlayer.playerStateStream.listen((state) {
@@ -1119,6 +1118,11 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
         }
       });
     } catch (e) {
+      // Reset state on error
+      setState(() {
+        _playingAudiobookId = null;
+        _isAudiobookPaused = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to play: $e')),
