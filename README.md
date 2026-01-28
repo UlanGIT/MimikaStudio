@@ -54,7 +54,7 @@ MimikaStudio isn't just a TTS engine wrapper:
 
 - **PDF Reader with Voice**: Load any PDF from the `./pdf` directory and have it read aloud with sentence-by-sentence highlighting. Choose your preferred Kokoro voice, adjust speed, and let MimikaStudio narrate your documents.
 
-- **Audiobook Creator**: Convert entire documents (PDF, TXT, MD) into audiobook files with a single click. The system intelligently chunks text at sentence boundaries, generates audio for each segment using Kokoro TTS, and concatenates everything into a single WAV file. Track progress in real-time, manage your audiobook library, and play any generated audiobook with full playback controls (play, pause, stop).
+- **Audiobook Creator**: Convert entire documents (PDF, TXT, MD) into audiobook files with a single click. The system intelligently chunks text at sentence boundaries, generates audio for each segment using Kokoro TTS, and concatenates everything into a single file. **Supports both WAV and MP3 output formats.** Track progress in real-time, manage your audiobook library, and play any generated audiobook with full playback controls (play, pause, stop).
 
 ![PDF Reader & Audiobook Creator](assets/03-pdf-audiobook-creator.png)
 
@@ -94,7 +94,7 @@ This isn't a weekend hack:
 - **XTTS2**: Multi-language voice cloning
 - **Unified Voice Library**: Single voice list usable with both Qwen3 and XTTS engines
 - **Document Reader**: Read PDFs, TXT, and MD files aloud with Kokoro TTS
-- **Audiobook Creator**: Convert full documents to audiobook files with progress tracking and playback controls
+- **Audiobook Creator**: Convert full documents to audiobook files (WAV/MP3) with progress tracking and playback controls
 - **CLI Tool**: Full command-line interface for all TTS engines
 - **MCP Server**: Codex CLI integration for programmatic access
 
@@ -539,16 +539,26 @@ curl -X POST http://localhost:8000/api/audiobook/generate \
   -d '{
     "text": "Your long document text here...",
     "voice": "bf_emma",
-    "speed": 1.0
+    "speed": 1.0,
+    "output_format": "mp3"
   }'
 ```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `text` | string | *required* | Document text to convert |
+| `title` | string | `"Untitled"` | Audiobook title |
+| `voice` | string | `"bf_emma"` | Kokoro voice ID |
+| `speed` | float | `1.0` | Playback speed (0.5-2.0) |
+| `output_format` | string | `"wav"` | Output format: `"wav"` or `"mp3"` |
 
 Response:
 ```json
 {
   "job_id": "abc123",
   "status": "started",
-  "message": "Audiobook generation started"
+  "total_chunks": 20,
+  "output_format": "mp3"
 }
 ```
 
@@ -565,11 +575,14 @@ Response:
   "status": "processing",
   "current_chunk": 5,
   "total_chunks": 20,
-  "progress_percent": 25.0
+  "percent": 25.0,
+  "output_format": "mp3"
 }
 ```
 
-**Output Format:** WAV (44.1kHz stereo)
+**Output Formats:**
+- **WAV**: Lossless, larger file size (~10MB/minute)
+- **MP3**: Compressed, smaller file size (~1.5MB/minute at 192kbps)
 
 Full API documentation: http://localhost:8000/docs
 
@@ -628,6 +641,7 @@ MimikaStudio/
 - **Flutter 3.x** with macOS desktop support enabled
 - **macOS 12+** for Flutter desktop
 - **espeak-ng** for Kokoro phonemization (`brew install espeak-ng`)
+- **ffmpeg** for MP3 audiobook export (`brew install ffmpeg`)
 
 **Optional**:
 - **CUDA GPU** for faster inference (NVIDIA)

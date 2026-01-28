@@ -12,6 +12,8 @@ transformers>=4.35.0,<4.45.0      # For TTS compatibility
 # Audio processing
 soundfile>=0.12.1
 numpy>=1.24.0,<2.0.0
+pydub>=0.25.1                     # MP3 conversion for audiobooks
+scipy>=1.10.0                     # Audio resampling for speed adjustment
 
 # PyTorch (CPU for macOS) - pinned for TTS compatibility
 torch>=2.0.0,<2.6.0

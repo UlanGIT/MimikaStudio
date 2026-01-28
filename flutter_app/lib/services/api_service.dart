@@ -429,11 +429,13 @@ class ApiService {
 
   /// Start audiobook generation from text.
   /// Returns job info including job_id for status polling.
+  /// [outputFormat] can be "wav" or "mp3".
   Future<Map<String, dynamic>> startAudiobookGeneration({
     required String text,
     String title = 'Untitled',
     String voice = 'bf_emma',
     double speed = 1.0,
+    String outputFormat = 'wav',
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/api/audiobook/generate'),
@@ -443,6 +445,7 @@ class ApiService {
         'title': title,
         'voice': voice,
         'speed': speed,
+        'output_format': outputFormat,
       }),
     );
     if (response.statusCode == 200) {

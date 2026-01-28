@@ -65,6 +65,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
   String _audiobookStatus = '';
   Timer? _audiobookPollTimer;
   String? _audiobookUrl;
+  String _audiobookOutputFormat = 'mp3'; // 'wav' or 'mp3'
 
   // Audiobook library state
   List<Map<String, dynamic>> _audiobooks = [];
@@ -587,6 +588,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
         title: _selectedPdfName ?? 'Untitled',
         voice: _selectedVoice,
         speed: _speed,
+        outputFormat: _audiobookOutputFormat,
       );
 
       _audiobookJobId = result['job_id'] as String;
@@ -942,6 +944,30 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
                 Text(
                   '${_audiobookPlaybackSpeed.toStringAsFixed(1)}x',
                   style: const TextStyle(fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+          // Output format selector
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                const Text('Format:', style: TextStyle(fontSize: 11)),
+                const SizedBox(width: 8),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'mp3', label: Text('MP3', style: TextStyle(fontSize: 10))),
+                    ButtonSegment(value: 'wav', label: Text('WAV', style: TextStyle(fontSize: 10))),
+                  ],
+                  selected: {_audiobookOutputFormat},
+                  onSelectionChanged: (Set<String> selection) {
+                    setState(() => _audiobookOutputFormat = selection.first);
+                  },
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
               ],
             ),

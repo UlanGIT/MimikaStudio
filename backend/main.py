@@ -778,6 +778,7 @@ class AudiobookRequest(BaseModel):
     title: str = "Untitled"
     voice: str = "bf_emma"
     speed: float = 1.0
+    output_format: str = "wav"  # "wav" or "mp3"
 
 
 @app.post("/api/audiobook/generate")
@@ -786,23 +787,40 @@ async def audiobook_generate(request: AudiobookRequest):
 
     Returns a job_id that can be used to poll for status.
     The generation runs in the background.
+
+    Args:
+        text: Document text to convert
+        title: Audiobook title
+        voice: Kokoro voice ID (default: bf_emma)
+        speed: Playback speed (default: 1.0)
+        output_format: "wav" or "mp3" (default: wav)
     """
     from tts.audiobook import create_audiobook_job
 
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
+    # Validate output format
+    output_format = request.output_format.lower()
+    if output_format not in ("wav", "mp3"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid output_format: {request.output_format}. Use 'wav' or 'mp3'"
+        )
+
     job = create_audiobook_job(
         text=request.text,
         title=request.title,
         voice=request.voice,
         speed=request.speed,
+        output_format=output_format,
     )
 
     return {
         "job_id": job.job_id,
         "status": job.status.value,
         "total_chunks": job.total_chunks,
+        "output_format": output_format,
     }
 
 
@@ -822,6 +840,7 @@ async def audiobook_status(job_id: str):
         "total_chunks": job.total_chunks,
         "percent": job.percent,
         "elapsed_seconds": round(job.elapsed_seconds, 1),
+        "output_format": job.output_format,
     }
 
     if job.status == JobStatus.COMPLETED:
@@ -853,34 +872,43 @@ async def audiobook_cancel(job_id: str):
 
 @app.get("/api/audiobook/list")
 async def audiobook_list():
-    """List all generated audiobooks."""
+    """List all generated audiobooks (WAV and MP3)."""
     import os
     from datetime import datetime
 
     audiobooks = []
     audiobook_pattern = "audiobook-"
 
-    for file in outputs_dir.glob(f"{audiobook_pattern}*.wav"):
-        stat = file.stat()
-        # Parse job_id from filename: audiobook-{job_id}.wav
-        job_id = file.stem.replace(audiobook_pattern, "")
+    # Search for both WAV and MP3 files
+    for ext in ["wav", "mp3"]:
+        for file in outputs_dir.glob(f"{audiobook_pattern}*.{ext}"):
+            stat = file.stat()
+            # Parse job_id from filename: audiobook-{job_id}.wav or .mp3
+            job_id = file.stem.replace(audiobook_pattern, "")
 
-        # Get audio duration using soundfile
-        try:
-            import soundfile as sf
-            info = sf.info(str(file))
-            duration_seconds = info.duration
-        except Exception:
-            duration_seconds = 0
+            # Get audio duration
+            try:
+                if ext == "wav":
+                    import soundfile as sf
+                    info = sf.info(str(file))
+                    duration_seconds = info.duration
+                else:
+                    # For MP3, use pydub
+                    from pydub import AudioSegment
+                    audio = AudioSegment.from_mp3(str(file))
+                    duration_seconds = len(audio) / 1000.0
+            except Exception:
+                duration_seconds = 0
 
-        audiobooks.append({
-            "job_id": job_id,
-            "filename": file.name,
-            "audio_url": f"/audio/{file.name}",
-            "size_mb": round(stat.st_size / (1024 * 1024), 2),
-            "duration_seconds": round(duration_seconds, 1),
-            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-        })
+            audiobooks.append({
+                "job_id": job_id,
+                "filename": file.name,
+                "audio_url": f"/audio/{file.name}",
+                "format": ext,
+                "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                "duration_seconds": round(duration_seconds, 1),
+                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+            })
 
     # Sort by creation time, newest first
     audiobooks.sort(key=lambda x: x["created_at"], reverse=True)
@@ -890,12 +918,22 @@ async def audiobook_list():
 
 @app.delete("/api/audiobook/{job_id}")
 async def audiobook_delete(job_id: str):
-    """Delete an audiobook file."""
-    file_path = outputs_dir / f"audiobook-{job_id}.wav"
-    if not file_path.exists():
+    """Delete an audiobook file (WAV or MP3)."""
+    # Check for both WAV and MP3
+    wav_path = outputs_dir / f"audiobook-{job_id}.wav"
+    mp3_path = outputs_dir / f"audiobook-{job_id}.mp3"
+
+    deleted = False
+    if wav_path.exists():
+        wav_path.unlink()
+        deleted = True
+    if mp3_path.exists():
+        mp3_path.unlink()
+        deleted = True
+
+    if not deleted:
         raise HTTPException(status_code=404, detail=f"Audiobook '{job_id}' not found")
 
-    file_path.unlink()
     return {"message": "Audiobook deleted", "job_id": job_id}
 
 

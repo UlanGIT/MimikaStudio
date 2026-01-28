@@ -2,6 +2,7 @@
 Audiobook generation module for converting documents to audio using Kokoro TTS.
 
 Handles text chunking, sequential audio generation, and concatenation.
+Supports WAV and MP3 output formats.
 """
 
 import re
@@ -11,11 +12,14 @@ import threading
 from pathlib import Path
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Optional, Literal
 import numpy as np
 import soundfile as sf
 
 from .kokoro_engine import get_kokoro_engine, DEFAULT_VOICE
+
+# Output format type
+OutputFormat = Literal["wav", "mp3"]
 
 
 class JobStatus(str, Enum):
@@ -34,6 +38,7 @@ class AudiobookJob:
     voice: str
     speed: float
     total_chunks: int
+    output_format: OutputFormat = "wav"
     current_chunk: int = 0
     status: JobStatus = JobStatus.STARTED
     error_message: Optional[str] = None
@@ -162,6 +167,7 @@ def create_audiobook_job(
     title: str,
     voice: str = DEFAULT_VOICE,
     speed: float = 1.0,
+    output_format: OutputFormat = "wav",
 ) -> AudiobookJob:
     """
     Create a new audiobook generation job.
@@ -171,6 +177,7 @@ def create_audiobook_job(
         title: Book/document title
         voice: Kokoro voice code
         speed: Playback speed multiplier
+        output_format: Output format ("wav" or "mp3")
 
     Returns:
         AudiobookJob instance
@@ -184,6 +191,7 @@ def create_audiobook_job(
         voice=voice,
         speed=speed,
         total_chunks=len(chunks),
+        output_format=output_format,
     )
 
     with _jobs_lock:
@@ -198,6 +206,19 @@ def create_audiobook_job(
     thread.start()
 
     return job
+
+
+def _convert_to_mp3(wav_path: Path, mp3_path: Path, bitrate: str = "192k") -> Path:
+    """Convert WAV file to MP3 using pydub."""
+    from pydub import AudioSegment
+
+    audio = AudioSegment.from_wav(str(wav_path))
+    audio.export(str(mp3_path), format="mp3", bitrate=bitrate)
+
+    # Remove the temporary WAV file
+    wav_path.unlink()
+
+    return mp3_path
 
 
 def _generate_audiobook(job: AudiobookJob, chunks: list[str]):
@@ -241,14 +262,21 @@ def _generate_audiobook(job: AudiobookJob, chunks: list[str]):
         # Concatenate all audio
         if all_audio:
             full_audio = np.concatenate(all_audio)
+            job.duration_seconds = len(full_audio) / sample_rate
 
-            # Save to file
-            output_file = outputs_dir / f"audiobook-{job.job_id}.wav"
-            sf.write(str(output_file), full_audio, sample_rate)
+            # Save to WAV first
+            wav_file = outputs_dir / f"audiobook-{job.job_id}.wav"
+            sf.write(str(wav_file), full_audio, sample_rate)
+
+            # Convert to MP3 if requested
+            if job.output_format == "mp3":
+                mp3_file = outputs_dir / f"audiobook-{job.job_id}.mp3"
+                output_file = _convert_to_mp3(wav_file, mp3_file)
+            else:
+                output_file = wav_file
 
             # Update job with results
             job.audio_path = output_file
-            job.duration_seconds = len(full_audio) / sample_rate
             job.file_size_mb = output_file.stat().st_size / (1024 * 1024)
             job.status = JobStatus.COMPLETED
         else:
