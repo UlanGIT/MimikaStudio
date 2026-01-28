@@ -1094,6 +1094,11 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
       _isAudiobookPaused = false;
     });
 
+    // Let the frame render before starting async work
+    await Future.delayed(Duration.zero);
+
+    if (!mounted) return;
+
     try {
       // Cancel previous subscription
       await _audiobookPlayerSubscription?.cancel();
@@ -1119,11 +1124,11 @@ class _PdfReaderScreenState extends State<PdfReaderScreen>
       });
     } catch (e) {
       // Reset state on error
-      setState(() {
-        _playingAudiobookId = null;
-        _isAudiobookPaused = false;
-      });
       if (mounted) {
+        setState(() {
+          _playingAudiobookId = null;
+          _isAudiobookPaused = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to play: $e')),
         );
